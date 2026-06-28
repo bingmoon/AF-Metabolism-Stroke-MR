@@ -402,6 +402,18 @@ if(length(all_res) > 0) {
   message("⚠️ 探索性 MR 未发现有效结果或数据不足。")
 }
 
+library(dplyr)
+explor_df <- read.csv("Stage4_Exploratory_MR_All.csv", stringsAsFactors = FALSE)
+ivw_results <- explor_df %>%
+  filter(method == "Inverse variance weighted") %>%
+  dplyr::select(Exposure, Outcome, nsnp, b, se, pval, or, or_lci95, or_uci95) %>%
+  mutate(
+    OR_CI = sprintf("%.2f (%.2f - %.2f)", or, or_lci95, or_uci95),
+    P_value = ifelse(pval < 0.001, "<0.001", sprintf("%.3f", pval))
+  ) %>%
+  dplyr::select(Exposure, Outcome, nsnp, OR_CI, P_value) %>%
+  arrange(Exposure, Outcome)
+write.csv(ivw_results, "Supplementary_Table_S2_Exploratory_MR.csv", row.names = FALSE)
 
 # ==============================================================================
 # 阶段名称: Stage 5 - 靶向因果确证与 SCI 制图 (Histidine -> Cardioembolic Stroke)
