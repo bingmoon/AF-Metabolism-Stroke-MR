@@ -533,3 +533,126 @@ combined_plot <- (p1_custom | p2_custom) / (p3_custom | p4_custom) +
 ggsave("Figure4_MR_Combined.pdf", combined_plot, width = 14, height = 12)
 
 message("\n✅ Stage 5 完成。所有核心图表及数值表格已保存。")
+
+# ==========================================
+# 审稿意见所需数据提取脚本
+# 请确保已运行 Stage 5 的数据提取部分
+# ==========================================
+
+library(dplyr)
+
+# =====================
+# D1: 最终纳入的 SNP 数量
+# =====================
+n_snps <- nrow(exp_dat)
+cat("D1. 靶向 MR 最终纳入的 SNP 数量:", n_snps, "\n\n")
+
+# =====================
+# D2: F 统计量的范围与均值
+# =====================
+# 方法1：如果 exp_dat 中有 F 统计量列（通常需要自己计算）
+# F = (beta / se)^2
+exp_dat <- exp_dat %>%
+  mutate(F_stat = (beta.exposure / se.exposure)^2)
+
+cat("D2. F 统计量:\n")
+cat(sprintf("  范围: %.2f – %.2f\n", min(exp_dat$F_stat), max(exp_dat$F_stat)))
+cat(sprintf("  均值: %.2f\n", mean(exp_dat$F_stat)))
+cat(sprintf("  F > 10 的 SNP 数量: %d / %d\n\n", sum(exp_dat$F_stat > 10), nrow(exp_dat)))
+
+# =====================
+# D3: 单个 SNP 效应表（用于补充表 S3）
+# =====================
+snp_table <- exp_dat %>%
+  dplyr::select(SNP, effect_allele.exposure, other_allele.exposure, 
+                beta.exposure, se.exposure, pval.exposure, F_stat) %>%
+  rename(
+    Effect_Allele = effect_allele.exposure,
+    Other_Allele = other_allele.exposure,
+    Beta = beta.exposure,
+    SE = se.exposure,
+    P_value = pval.exposure,
+    F_Statistic = F_stat
+  )
+
+cat("D3. 单个 SNP 效应表（前 6 行预览）:\n")
+print(head(snp_table))
+cat(sprintf("\n完整表格共 %d 行\n\n", nrow(snp_table)))
+
+write.csv(snp_table, "Supplementary_Table_S3_SNP_Details.csv", row.names = FALSE)
+
+# =====================
+# D4: MR-PRESSO 全局检验结果
+# =====================
+cat("D4. MR-PRESSO 结果:\n")
+if (exists("mr_presso_result")) {
+  cat(sprintf("  RSSobs = %.4f\n", mr_presso_result$`Main MR results`$RSSobs[1]))
+  cat(sprintf("  Global Test P-value = %.4f\n\n", mr_presso_result$`Main MR results`$Pvalue[1]))
+} else {
+  cat("  请先运行 MR-PRESSO: 
+  library(MRPRESSO)
+  mr_presso_result <- mr_presso(BetaOutcome = \"beta.outcome\", 
+                                BetaExposure = \"beta.exposure\",
+                                SdOutcome = \"se.outcome\", 
+                                SdExposure = \"se.exposure\",
+                                OUTLIERtest = TRUE, DISTORTIONtest = TRUE, 
+                                data = dat, NbDistribution = 1000, SignifThreshold = 0.05)
+  \n\n")
+}
+
+# =====================
+# D5: Steiger 检验的方差解释量
+# =====================
+cat("D5. Steiger 方向性检验:\n")
+steiger_result <- steiger_filtering(dat)
+if (exists("steiger_result")) {
+  cat(sprintf("  暴露方差解释量 (R²_exposure): %.4f\n", steiger_result$steiger_pval))
+  cat(sprintf("  结局方差解释量 (R²_outcome): %.4f\n", steiger_result$steiger_pval))
+  cat(sprintf("  正确因果方向: %s\n", steiger_result$correct_causal_direction))
+  cat(sprintf("  Steiger P-value: %.4f\n\n", steiger_result$steiger_pval))
+} else {
+  cat("  请检查 steiger_filtering 函数是否正确调用。\n\n")
+}
+
+# =====================
+# D6: 探索性 MR 中每个对的 SNP 数量
+# =====================
+cat("D6. 探索性 MR 中各对的 SNP 数量:\n")
+explor_df <- read.csv("Stage4_Exploratory_MR_All.csv", stringsAsFactors = FALSE)
+snp_counts <- explor_df %>%
+  filter(method == "Inverse variance weighted") %>%
+  dplyr::select(Exposure, Outcome, nsnp) %>%
+  distinct() %>%
+  arrange(Exposure, Outcome)
+print(snp_counts)
+
+# =====================
+# D7: 组氨酸的精确 log2FC 和 FDR
+# =====================
+cat("\nD7. 组氨酸的精确差异分析结果:\n")
+diff_table <- read.csv("Differential_Metabolites_Results.csv", stringsAsFactors = FALSE)
+histidine_row <- diff_table %>%
+  filter(grepl("Histidine", Metabolite, ignore.case = TRUE))
+if (nrow(histidine_row) > 0) {
+  cat(sprintf("  代谢物名称: %s\n", histidine_row$Metabolite[1]))
+  cat(sprintf("  log2FC: %.4f\n", histidine_row$log2FC[1]))
+  cat(sprintf("  P-value (raw): %.4e\n", histidine_row$Pvalue[1]))
+  cat(sprintf("  FDR: %.4e\n\n", histidine_row$FDR[1]))
+} else {
+  cat("  未找到组氨酸，请检查代谢物名称。\n")
+}
+
+# =====================
+# 汇总所有关键数值
+# =====================
+cat("============================================\n")
+cat("  投稿所需关键数值汇总\n")
+cat("============================================\n")
+cat(sprintf("  SNP 数量: %d\n", n_snps))
+cat(sprintf("  F 统计量范围: %.2f – %.2f (均值 %.2f)\n", 
+            min(exp_dat$F_stat), max(exp_dat$F_stat), mean(exp_dat$F_stat)))
+cat(sprintf("  IVW: OR = %.2f, 95%% CI = %.2f–%.2f, P = %.4f\n",
+            exp(-0.333469844), exp(-0.333469844 - 1.96*0.148104198), 
+            exp(-0.333469844 + 1.96*0.148104198), 0.024348231))
+cat(sprintf("  MR-Egger 截距 P = %.4f\n", 0.945))
+cat(sprintf("  Cochran's Q P = %.4f\n", 0.337))
