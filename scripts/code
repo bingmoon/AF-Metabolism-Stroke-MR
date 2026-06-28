@@ -338,7 +338,7 @@ exposure_list <- list(
 # 结局列表
 outcome_list <- list(
   "Heart_Failure" = "ebi-a-GCST009541",
-  "CRP_Inflammation" = "ieu-a-79",
+  "CRP_Inflammation" = "ieu-b-35",
   "Cardioembolic_Stroke" = "ebi-a-GCST006908"
 )
 
