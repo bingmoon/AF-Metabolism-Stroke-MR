@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
-This repository contains the analytical pipeline for the study: **"Metabolomic Profiling Identifies Histidine Depletion in Atrial Fibrillation Microenvironment as a Causal Risk Factor for Cardioembolic Stroke: Insights for Cardiovascular Nursing."**
+This repository contains the analytical pipeline for the study: **"Metabolomic Profiling Reveals Histidine Depletion in the Atrial Fibrillation Microenvironment and Its Genetic Association with Cardioembolic Stroke"**
 
 The project integrates secondary metabolomic data mining with two-sample Mendelian Randomization (MR) to identify modifiable metabolic targets for stroke prevention in Atrial Fibrillation (AF) patients.
 
