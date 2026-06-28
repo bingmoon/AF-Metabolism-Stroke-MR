@@ -443,12 +443,12 @@ write.csv(main_res, "Table_MR_Main_Results.csv", row.names = FALSE)
 
 # 单个 SNP 效应表（用于补充材料）
 snp_eff <- res_single %>%
-  dplyr::select(SNP, b, se, pval) %>%
-  mutate(
-    OR = exp(b),
-    OR_lower = exp(b - 1.96 * se),
-    OR_upper = exp(b + 1.96 * se)
-  )
+    dplyr::select(SNP, b, se, p) %>%        # 注意这里 pval → p
+    mutate(
+        OR = exp(b),
+        OR_lower = exp(b - 1.96 * se),
+        OR_upper = exp(b + 1.96 * se)
+    )
 write.csv(snp_eff, "Supplementary_Table_SingleSNP_Effects.csv", row.names = FALSE)
 
 # 敏感性分析汇总
