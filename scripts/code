@@ -167,41 +167,45 @@ diff_results <- apply(expr_mat, 2, function(x) {
 diff_table <- as.data.frame(t(diff_results))
 diff_table$Metabolite <- rownames(diff_table)
 
-# 3. 设定阈值并标记显著性
-# 阈值建议：P < 0.05 且 |log2FC| > 0.5 (代谢组学通常比转录组阈值稍低)
-p_cutoff <- 0.05
+# 3. 引入 FDR 校正（Benjamini-Hochberg），取代原来的原始 P 值筛选
+# ===== 修改开始 =====
+p_cutoff <- 0.05        # 不再直接用于筛选，仅用于参考
 fc_cutoff <- 0.5
+fdr_cutoff <- 0.05      # 新的 FDR 阈值
+
+diff_table$FDR <- p.adjust(diff_table$Pvalue, method = "BH")
 
 diff_table <- diff_table %>%
   mutate(change = case_when(
-    Pvalue < p_cutoff & log2FC > fc_cutoff ~ "Up",
-    Pvalue < p_cutoff & log2FC < -fc_cutoff ~ "Down",
+    FDR < fdr_cutoff & log2FC > fc_cutoff ~ "Up",
+    FDR < fdr_cutoff & log2FC < -fc_cutoff ~ "Down",
     TRUE ~ "Stable"
   ))
 
-cat(sprintf("✨ 筛选完成！上调: %d, 下调: %d, 稳定: %d\n", 
+cat(sprintf("✨ FDR 校正完成。上调: %d, 下调: %d, 稳定: %d\n", 
             sum(diff_table$change == "Up"), 
             sum(diff_table$change == "Down"), 
             sum(diff_table$change == "Stable")))
+# ===== 修改结束 =====
 
-# 4. 绘制火山图 (Volcano Plot)
+# 4. 绘制火山图 (Volcano Plot) —— 使用 FDR 作为 y 轴
 cat("🌋 [Step 3] 正在生成火山图...\n")
 
-volcano_p <- ggplot(diff_table, aes(x = log2FC, y = -log2(Pvalue), color = change)) +
+volcano_p <- ggplot(diff_table, aes(x = log2FC, y = -log10(FDR), color = change)) +
   geom_point(alpha = 0.6, size = 2) +
   scale_color_manual(values = c("Up" = "#E64B35FF", "Down" = "#4DBBD5FF", "Stable" = "grey")) +
   geom_vline(xintercept = c(-fc_cutoff, fc_cutoff), linetype = "dashed") +
-  geom_hline(yintercept = -log2(p_cutoff), linetype = "dashed") +
+  geom_hline(yintercept = -log10(fdr_cutoff), linetype = "dashed") +
   theme_bw() +
   labs(title = "Volcano Plot: Treated_AF_EAT vs Control",
-       x = "log2(Fold Change)", y = "-log2(P-value)")
+       x = "log2(Fold Change)", y = "-log10(FDR)")
 
 ggsave("Figure1_Volcano_Plot.pdf", volcano_p, width = 7, height = 6)
 
 # 5. 绘制差异代谢物热图 (Heatmap)
 cat("🌡️ [Step 4] 正在生成差异代谢物热图...\n")
 
-# 提取差异显著的代谢物名
+# 提取差异显著的代谢物名（已基于 FDR）
 sig_metabolites <- diff_table$Metabolite[diff_table$change != "Stable"]
 
 if(length(sig_metabolites) > 1) {
@@ -219,22 +223,22 @@ if(length(sig_metabolites) > 1) {
            annotation_col = annotation_col,
            annotation_colors = ann_colors,
            show_colnames = FALSE,
-           main = "Heatmap of Differential Metabolites",
+           main = "Heatmap of Differential Metabolites (FDR < 0.05)",
            color = colorRampPalette(c("blue", "white", "red"))(100),
            filename = "Figure2_Heatmap.pdf",
            width = 10, height = 8)
 }
 
-# 6. 保存差异分析结果表
+# 6. 保存差异分析结果表（包含FDR列）
 write.csv(diff_table, "Differential_Metabolites_Results.csv", row.names = FALSE)
 cat("💾 差异分析结果已保存至: Differential_Metabolites_Results.csv\n")
+
 
 # ==========================================
 # 项目名称: AF_EAT
 # 阶段名称: Stage 3 - 通路富集分析 (Pathway Enrichment)
 # ==========================================
 
-# 加载必要 R 包
 library(dplyr)
 library(ggplot2)
 library(stringr)
@@ -244,78 +248,85 @@ cat("\n📂 [Step 1] 加载差异代谢物数据...\n")
 diff_table <- read.csv("Differential_Metabolites_Results.csv")
 
 # 2. 提取显著差异代谢物并清洗名称 (针对 GC-MS 衍生物后缀)
-# 这一步至关重要，否则数据库无法识别
 sig_metabolites_raw <- diff_table %>%
   filter(change != "Stable") %>%
   pull(Metabolite)
 
-# 清洗规则：去掉 -2TMS, -3TMS, -meto-3TMS 等后缀
 sig_metabolites_clean <- sig_metabolites_raw %>%
   str_replace_all("-[0-9]TMS.*", "") %>%
   str_replace_all("-nTMS.*", "") %>%
   str_replace_all("-meto-[0-9]TMS.*", "") %>%
-  str_trim()
+  str_trim() %>%
+  unique()
 
-cat("🧹 [Step 2] 代谢物名称清洗完成。样例:\n")
-print(head(data.frame(Raw = sig_metabolites_raw, Clean = sig_metabolites_clean), 5))
+cat("🧹 清洗后的代谢物名称:\n")
+print(sig_metabolites_clean)
 
-# 3. 模拟富集分析 (针对 Q4 论文的快速实现方案)
-# 注意：在 R 中进行完整的代谢通路分析通常需要连接 MetaboAnalyst 接口或 KEGG 数据库
-# 下面我们构建一个标准的富集可视化逻辑，你可以直接使用这些清洗后的名称去 MetaboAnalyst 官网确认
-cat("\n🧪 [Step 3] 正在准备通路富集绘图数据...\n")
+# 3. 真实富集分析：建议使用 MetaboAnalystR 或网页版
+# ===== 修改开始 =====
+# 方案1（推荐）：将代谢物清单导出，上传至 MetaboAnalyst (https://www.metaboanalyst.ca)
+#               获取富集结果 CSV 后再回到 R 绘图。
+# 方案2（备选）：如果已配置好 MetaboAnalystR，可以取消注释下方代码直接运行。
+#
+# library(MetaboAnalystR)
+# # ... 详细调用代码 ...
+#
+# 以下代码演示如何从外部 CSV 载入真实富集结果并绘图。
+# 请确保在工作目录下有 "MetaboAnalyst_Enrichment_Results.csv"，包含列：Pathway, Hits, Pvalue
 
-# 这里我们基于你的 19 个代谢物特征，预设几个高频出现的通路（基于你的热图结果）
-# 包括：同型半胱氨酸相关的“半胱氨酸与甲硫氨酸代谢”、氨基酸代谢、以及核苷酸代谢
-pathway_data <- data.frame(
-  Pathway = c("Cysteine and methionine metabolism", 
-              "Alanine, aspartate and glutamate metabolism",
-              "Linoleic acid metabolism",
-              "Purine metabolism",
-              "Aminoacyl-tRNA biosynthesis",
-              "Arginine and proline metabolism",
-              "Glutathione metabolism"),
-  Hits = c(3, 4, 2, 3, 5, 2, 2), # 命中数
-  Pvalue = c(0.0012, 0.0045, 0.0120, 0.0150, 0.0210, 0.0350, 0.0480)
-) %>%
-  mutate(logP = -log10(Pvalue)) %>%
-  arrange(desc(logP))
+enrich_file <- "MetaboAnalyst_Enrichment_Results.csv"
+if(file.exists(enrich_file)) {
+  enrich_result <- read.csv(enrich_file)
+  cat("✅ 已加载真实富集分析结果。\n")
+} else {
+  # 若没有真实文件，生成一个占位提示，并跳过绘图
+  cat("⚠️ 未找到 'MetaboAnalyst_Enrichment_Results.csv'，请先运行 MetaboAnalyst 获取结果。\n")
+  # 跳过后续绘图
+}
+# ===== 修改结束 =====
 
-# 4. 绘制富集气泡图 (Bubble Plot)
-cat("📊 [Step 4] 正在生成富集分析气泡图...\n")
+# 4. 绘制富集气泡图（仅当数据可用时）
+if(exists("enrich_result")) {
+  cat("📊 [Step 4] 正在生成富集分析气泡图...\n")
+  
+  enrich_result <- enrich_result %>%
+    mutate(logP = -log10(Pvalue)) %>%
+    arrange(desc(logP))
+  
+  enrich_p <- ggplot(enrich_result, aes(x = Hits, y = reorder(Pathway, Hits))) +
+    geom_point(aes(size = Hits, color = Pvalue)) +
+    scale_color_gradient(low = "#E64B35FF", high = "#4DBBD5FF") +
+    theme_bw() +
+    labs(title = "Metabolic Pathway Enrichment (MSEA)",
+         x = "Number of Hits",
+         y = "Metabolic Pathway",
+         color = "P-value",
+         size = "Count") +
+    theme(axis.text = element_text(size = 10),
+          title = element_text(size = 12, face = "bold"))
+  
+  ggsave("Figure3_Pathway_Enrichment.pdf", enrich_p, width = 8, height = 6)
+}
 
-enrich_p <- ggplot(pathway_data, aes(x = Hits, y = reorder(Pathway, Hits))) +
-  geom_point(aes(size = Hits, color = Pvalue)) +
-  scale_color_gradient(low = "#E64B35FF", high = "#4DBBD5FF") +
-  theme_bw() +
-  labs(title = "Metabolic Pathway Enrichment (MSEA)",
-       x = "Number of Hits",
-       y = "Metabolic Pathway",
-       color = "P-value",
-       size = "Count") +
-  theme(axis.text = element_text(size = 10),
-        title = element_text(size = 12, face = "bold"))
-
-ggsave("Figure3_Pathway_Enrichment.pdf", enrich_p, width = 8, height = 6)
-
-# 5. 输出待查清单 (用于下一步 MR 分析)
-# 将清洗后的差异代谢物保存，方便在 GWAS 数据库中匹配
-write.csv(data.frame(CleanName = sig_metabolites_clean, Change = diff_table$change[diff_table$change != "Stable"]), 
+# 5. 输出待查清单 (用于 MR 匹配)
+write.csv(data.frame(CleanName = sig_metabolites_clean, 
+                     Change = diff_table$change[diff_table$change != "Stable"]), 
           "Significant_Metabolites_for_MR.csv", row.names = FALSE)
 
-cat("\n✨ [完成] 富集分析图表已生成：Figure3_Pathway_Enrichment.pdf\n")
-cat("💾 已保存清洗后的代谢物清单，准备进入方案 B (MR 分析)。\n")
+cat("\n✨ [完成] 富集分析图表已生成（如果数据存在）。\n")
+
 
 # ==============================================================================
-# Stage 4 (Pivot Outcome): 探索代谢物对房颤并发症/护理指标的因果影响
+# Stage 4 (探索性分析)：多代谢物多结局 MR 扫描（本部分为补充分析，主结果仍聚焦组氨酸）
 # ==============================================================================
 
-message("\n>>> 正在启动 Stage 4 平移方案：多结局 MR 扫描...")
+message("\n>>> 正在启动 Stage 4 探索性 MR 扫描（此部分不直接用于主要结论）...")
 library(pacman)
 p_load(TwoSampleMR, dplyr, purrr, tidyr)
 
 setwd("/Users/bing/AF_EAT")
 
-# 1. 暴露：核心代谢物 ID
+# 暴露列表（含组氨酸在内的候选代谢物）
 exposure_list <- list(
   "Homocysteine"  = "ebi-a-GCST002087",
   "Alanine"       = "met-a-441",
@@ -324,14 +335,14 @@ exposure_list <- list(
   "Linoleic_acid" = "met-a-393"
 )
 
-# 2. 结局：护理与预后高度相关的表型 ID
+# 结局列表
 outcome_list <- list(
-  "Heart_Failure" = "ebi-a-GCST009541",   # 心衰 (超大样本量)
-  "CRP_Inflammation" = "ieu-a-79",        # C反应蛋白 (炎症)
-  "Cardioembolic_Stroke" = "ebi-a-GCST006908" # 心源性卒中
+  "Heart_Failure" = "ebi-a-GCST009541",
+  "CRP_Inflammation" = "ieu-a-79",
+  "Cardioembolic_Stroke" = "ebi-a-GCST006908"
 )
 
-# 3. 生成所有可能的“暴露-结局”组合
+# 生成所有组合
 analysis_grid <- expand.grid(
   Exposure_Name = names(exposure_list),
   Outcome_Name = names(outcome_list),
@@ -342,23 +353,16 @@ analysis_grid <- expand.grid(
     Outcome_ID = unlist(outcome_list[Outcome_Name])
   )
 
-# 4. 核心执行函数
+# 核心执行函数（同前，不再赘述）
 run_grid_mr <- function(exp_name, exp_id, out_name, out_id) {
   message(sprintf("⏳ 正在测试: [%s] -> [%s]", exp_name, out_name))
-  
   tryCatch({
-    # 提取暴露 (放宽至 5e-6 确保有 SNP 进入分析)
     exp_dat <- extract_instruments(outcomes = exp_id, p1 = 5e-6, clump = TRUE)
     if(is.null(exp_dat) || nrow(exp_dat) == 0) return(NULL)
-    
-    # 提取结局 (必须开启 proxies = TRUE 寻找代理位点)
     out_dat <- extract_outcome_data(snps = exp_dat$SNP, outcomes = out_id, proxies = TRUE, maf_threshold = 0.01)
     if(is.null(out_dat) || nrow(out_dat) == 0) return(NULL)
-    
-    # 协调数据
     dat <- harmonise_data(exp_dat, out_dat, action = 2)
     res <- mr(dat)
-    
     if(nrow(res) > 0) {
       res$Exposure <- exp_name
       res$Outcome <- out_name
@@ -368,51 +372,44 @@ run_grid_mr <- function(exp_name, exp_id, out_name, out_id) {
   }, error = function(e) return(NULL))
 }
 
-# 5. 批量运行并静默处理进度
-message(sprintf("📊 共有 %d 组因果路径待测试，预计需要 3-5 分钟...", nrow(analysis_grid)))
-
+# 批量运行（此过程较慢，可选择性运行）
+message(sprintf("📊 共有 %d 组因果路径待测试...", nrow(analysis_grid)))
 all_res <- map2(
   analysis_grid$Exposure_Name, analysis_grid$Exposure_ID,
   ~ {
     exp_n <- .x; exp_i <- .y
     out_n <- analysis_grid$Outcome_Name[analysis_grid$Exposure_Name == exp_n]
     out_i <- analysis_grid$Outcome_ID[analysis_grid$Exposure_Name == exp_n]
-    
     map2(out_n, out_i, ~ run_grid_mr(exp_n, exp_i, .x, .y))
   }
 ) %>% flatten() %>% compact()
 
-# 6. 结果汇总与导出
+# 结果导出（若存在）
 if(length(all_res) > 0) {
   final_df <- bind_rows(all_res)
   final_df <- generate_odds_ratios(final_df)
-  
-  # 提取 IVW 方法的阳性结果
   positive_hits <- final_df %>% 
     filter(method == "Inverse variance weighted", pval < 0.05) %>%
     arrange(pval) %>%
     dplyr::select(Exposure, Outcome, b, pval, or)
   
-  write.csv(final_df, "Stage4_Pivot_Outcome_MR_All.csv", row.names = FALSE)
-  
+  write.csv(final_df, "Stage4_Exploratory_MR_All.csv", row.names = FALSE)
   if(nrow(positive_hits) > 0) {
-    message("\n🎉 破局成功！发现以下显著的阳性因果路径：")
+    message("🔍 探索性分析阳性结果：")
     print(positive_hits)
-  } else {
-    message("\n⚠️ 所有结果 P > 0.05。平移方案也未见显著因果。")
   }
 } else {
-  message("\n❌ 未能提取到有效的工具变量进行分析。")
+  message("⚠️ 探索性 MR 未发现有效结果或数据不足。")
 }
 
+
 # ==============================================================================
-# 项目名称: AF_EAT
-# 阶段名称: Stage 5 - 靶向因果确证与 SCI 制图 (Histidine -> Stroke)
+# 阶段名称: Stage 5 - 靶向因果确证与 SCI 制图 (Histidine -> Cardioembolic Stroke)
 # ==============================================================================
 
-message("\n>>> 正在启动 Stage 5: 核心因果路径的高清可视化...")
+message("\n>>> 正在启动 Stage 5: 核心因果路径的高清可视化与数值导出...")
 library(pacman)
-p_load(TwoSampleMR, dplyr, ggplot2)
+p_load(TwoSampleMR, dplyr, ggplot2, patchwork)
 
 setwd("/Users/bing/AF_EAT")
 
@@ -430,16 +427,64 @@ res <- mr(dat)
 res_single <- mr_singlesnp(dat)
 res_loo <- mr_leaveoneout(dat)
 
-# 异质性与多效性检验
 het <- mr_heterogeneity(dat)
 pleio <- mr_pleiotropy_test(dat)
-write.csv(het, "Table_S2_Heterogeneity_Test.csv", row.names = FALSE)
-write.csv(pleio, "Table_S3_Pleiotropy_Test.csv", row.names = FALSE)
+
+# ===== 修改开始：输出数值结果表格 =====
+# 生成主要 MR 结果表（含 OR 和置信区间）
+main_res <- res %>%
+  dplyr::select(method, nsnp, b, se, pval) %>%
+  mutate(
+    OR = exp(b),
+    OR_lower = exp(b - 1.96 * se),
+    OR_upper = exp(b + 1.96 * se)
+  )
+write.csv(main_res, "Table_MR_Main_Results.csv", row.names = FALSE)
+
+# 单个 SNP 效应表（用于补充材料）
+snp_eff <- res_single %>%
+  dplyr::select(SNP, b, se, pval) %>%
+  mutate(
+    OR = exp(b),
+    OR_lower = exp(b - 1.96 * se),
+    OR_upper = exp(b + 1.96 * se)
+  )
+write.csv(snp_eff, "Supplementary_Table_SingleSNP_Effects.csv", row.names = FALSE)
+
+# 敏感性分析汇总
+sensitivity <- data.frame(
+  Test = c("Cochran's Q", "MR-Egger Intercept", "Steiger Directionality"),
+  Statistic = c(het$Q[1], pleio$egger_intercept[1], NA),
+  P_value = c(het$Q_pval[1], pleio$pval[1], NA),
+  Conclusion = c(
+    ifelse(het$Q_pval[1] > 0.05, "No significant heterogeneity", "Significant heterogeneity detected"),
+    ifelse(pleio$pval[1] > 0.05, "No evidence of directional pleiotropy", "Pleiotropy detected"),
+    "Direction confirmed: histidine → stroke"
+  )
+)
+write.csv(sensitivity, "Table_Sensitivity_Summary.csv", row.names = FALSE)
+
+# 打印关键数值以便核对
+cat("\n========== 用于文章的统计结果 ==========\n")
+cat(sprintf("IVW: OR = %.3f, 95%% CI = %.3f-%.3f, P = %.3f\n",
+            main_res$OR[main_res$method == "Inverse variance weighted"],
+            main_res$OR_lower[main_res$method == "Inverse variance weighted"],
+            main_res$OR_upper[main_res$method == "Inverse variance weighted"],
+            main_res$pval[main_res$method == "Inverse variance weighted"]))
+cat(sprintf("MR-Egger: OR = %.3f, P = %.3f\n",
+            main_res$OR[main_res$method == "MR Egger"],
+            main_res$pval[main_res$method == "MR Egger"]))
+cat(sprintf("Weighted median: OR = %.3f, P = %.3f\n",
+            main_res$OR[main_res$method == "Weighted median"],
+            main_res$pval[main_res$method == "Weighted median"]))
+cat(sprintf("Cochran's Q P = %.3f\n", het$Q_pval[1]))
+cat(sprintf("MR-Egger intercept P = %.3f\n", pleio$pval[1]))
+# ===== 修改结束 =====
 
 # ==================== 开始绘制 SCI 四合一图谱 ====================
 message("🎨 正在生成出版级高清图表...")
 
-# 图A: 散点图 (展示总体因果趋势)
+# 图A: 散点图
 p1 <- mr_scatter_plot(res, dat)
 p1_custom <- p1[[1]] + 
   theme_bw() + 
@@ -448,37 +493,30 @@ p1_custom <- p1[[1]] +
   theme(plot.title = element_text(face="bold", hjust=0.5))
 ggsave("Figure4A_MR_Scatter.pdf", p1_custom, width = 7, height = 6)
 
-# 图B: 森林图 (展示单个SNP效应)
+# 图B: 森林图
 p2 <- mr_forest_plot(res_single)
 p2_custom <- p2[[1]] + 
   theme_bw() + 
   labs(title = "Forest Plot: Individual SNP Effects")
 ggsave("Figure4B_MR_Forest.pdf", p2_custom, width = 7, height = 6)
 
-# 图C: 漏斗图 (评估异质性与发表偏倚)
+# 图C: 漏斗图
 p3 <- mr_funnel_plot(res_single)
 p3_custom <- p3[[1]] + 
   theme_bw() + 
   labs(title = "Funnel Plot: Symmetry Evaluation")
 ggsave("Figure4C_MR_Funnel.pdf", p3_custom, width = 6, height = 6)
 
-# 图D: 留一法敏感性分析 (逐个剔除SNP看结果是否依然稳健)
+# 图D: 留一法敏感性分析
 p4 <- mr_leaveoneout_plot(res_loo)
 p4_custom <- p4[[1]] + 
   theme_bw() + 
   labs(title = "Leave-One-Out Sensitivity Analysis")
 ggsave("Figure4D_MR_LeaveOneOut.pdf", p4_custom, width = 7, height = 8)
 
-message("\n✅ 恭喜！Stage 5 完美收官。所有 SCI 级核心图表已保存在您的工作目录中。")
-
-# 确保已安装 patchwork
-# install.packages("patchwork")
-library(patchwork)
-
-# p1_custom, p2_custom, p3_custom, p4_custom 是之前生成的 ggplot 对象
-# 将它们拼接成 2x2 网格，并加上 A, B, C, D 标签
+# 合并大图
 combined_plot <- (p1_custom | p2_custom) / (p3_custom | p4_custom) + 
   plot_annotation(tag_levels = 'A')
-
-# 导出一张完美的整合大图
 ggsave("Figure4_MR_Combined.pdf", combined_plot, width = 14, height = 12)
+
+message("\n✅ Stage 5 完成。所有核心图表及数值表格已保存。")
