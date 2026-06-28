@@ -413,6 +413,7 @@ ivw_results <- explor_df %>%
   ) %>%
   dplyr::select(Exposure, Outcome, nsnp, OR_CI, P_value) %>%
   arrange(Exposure, Outcome)
+ivw_results <- ivw_results %>% distinct(Exposure, Outcome, .keep_all = TRUE)
 write.csv(ivw_results, "Supplementary_Table_S2_Exploratory_MR.csv", row.names = FALSE)
 
 # ==============================================================================
