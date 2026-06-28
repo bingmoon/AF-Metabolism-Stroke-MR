@@ -1,5 +1,5 @@
 # ==========================================
-# 项目名称: AF_EAT_LECs_MultiOmics_MR
+# 项目名称: AF_EAT
 # 阶段名称: Stage 1 - 数据清洗与质控 (Data Cleaning & QC)
 # 研究对象: ST004739 (AF-EAT 诱导的淋巴内皮细胞代谢组)
 # ==========================================
@@ -12,7 +12,7 @@ if (!requireNamespace("impute", quietly = TRUE)) BiocManager::install("impute")
 library(impute)
 
 # 设置工作目录 (已根据你的要求设定)
-setwd("/Users/bing/AF_EAT_LECs_MultiOmics_MR")
+setwd("/Users/bing/AF_EAT")
 
 # ==========================================
 # Step 1: 动态拉取 ST004739 临床分组信息
@@ -126,7 +126,7 @@ write.csv(data_clean, output_name, row.names = FALSE)
 cat(paste0("💾 已保存黄金矩阵至: ", getwd(), "/", output_name, "\n"))
 
 # ==========================================
-# 项目名称: AF_EAT_LECs_MultiOmics_MR
+# 项目名称: AF_EAT
 # 阶段名称: Stage 2 - 差异代谢物筛选 (Differential Analysis)
 # ==========================================
 
@@ -230,7 +230,7 @@ write.csv(diff_table, "Differential_Metabolites_Results.csv", row.names = FALSE)
 cat("💾 差异分析结果已保存至: Differential_Metabolites_Results.csv\n")
 
 # ==========================================
-# 项目名称: AF_EAT_LECs_MultiOmics_MR
+# 项目名称: AF_EAT
 # 阶段名称: Stage 3 - 通路富集分析 (Pathway Enrichment)
 # ==========================================
 
@@ -313,7 +313,7 @@ message("\n>>> 正在启动 Stage 4 平移方案：多结局 MR 扫描...")
 library(pacman)
 p_load(TwoSampleMR, dplyr, purrr, tidyr)
 
-setwd("/Users/bing/AF_EAT_LECs_MultiOmics_MR")
+setwd("/Users/bing/AF_EAT")
 
 # 1. 暴露：核心代谢物 ID
 exposure_list <- list(
@@ -406,7 +406,7 @@ if(length(all_res) > 0) {
 }
 
 # ==============================================================================
-# 项目名称: AF_EAT_LECs_MultiOmics_MR
+# 项目名称: AF_EAT
 # 阶段名称: Stage 5 - 靶向因果确证与 SCI 制图 (Histidine -> Stroke)
 # ==============================================================================
 
@@ -414,7 +414,7 @@ message("\n>>> 正在启动 Stage 5: 核心因果路径的高清可视化...")
 library(pacman)
 p_load(TwoSampleMR, dplyr, ggplot2)
 
-setwd("/Users/bing/AF_EAT_LECs_MultiOmics_MR")
+setwd("/Users/bing/AF_EAT")
 
 # 1. 精准提取靶向数据
 exp_id <- "met-a-495"           # Histidine
