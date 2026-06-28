@@ -656,3 +656,17 @@ cat(sprintf("  IVW: OR = %.2f, 95%% CI = %.2f–%.2f, P = %.4f\n",
             exp(-0.333469844 + 1.96*0.148104198), 0.024348231))
 cat(sprintf("  MR-Egger 截距 P = %.4f\n", 0.945))
 cat(sprintf("  Cochran's Q P = %.4f\n", 0.337))
+library(MRPRESSO)
+mr_presso_result <- mr_presso(
+  BetaOutcome = "beta.outcome", 
+  BetaExposure = "beta.exposure",
+  SdOutcome = "se.outcome", 
+  SdExposure = "se.exposure",
+  OUTLIERtest = TRUE, 
+  DISTORTIONtest = TRUE, 
+  data = dat, 
+  NbDistribution = 1000, 
+  SignifThreshold = 0.05
+)
+# 查看全局检验 P 值
+mr_presso_result$`Main MR results`
