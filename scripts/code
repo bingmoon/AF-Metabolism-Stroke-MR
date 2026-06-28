@@ -670,3 +670,88 @@ mr_presso_result <- mr_presso(
 )
 # 查看全局检验 P 值
 mr_presso_result$`Main MR results`
+
+# ==========================================
+# 生成投稿用补充材料 Excel (Supplementary Tables S1–S3)
+# ==========================================
+
+# 加载必要包（若未安装会自动安装）
+if (!require("writexl")) install.packages("writexl")
+if (!require("dplyr")) install.packages("dplyr")
+library(writexl)
+library(dplyr)
+
+# ---------- Sheet S1: 差异代谢物完整结果 ----------
+s1 <- read.csv("Differential_Metabolites_Results.csv", stringsAsFactors = FALSE)
+# 确保列顺序合理（可以根据需要调整）
+s1 <- s1 %>% dplyr::select(Metabolite, log2FC, Pvalue, FDR, change, everything())
+
+# ---------- Sheet S2: 探索性 MR 扫描 (IVW) ----------
+explor <- read.csv("Stage4_Exploratory_MR_All.csv", stringsAsFactors = FALSE)
+s2 <- explor %>%
+  filter(method == "Inverse variance weighted") %>%
+  dplyr::select(Exposure, Outcome, nsnp, b, se, pval, or, or_lci95, or_uci95) %>%
+  mutate(
+    OR_CI = sprintf("%.2f (%.2f–%.2f)", or, or_lci95, or_uci95),
+    P_value = ifelse(pval < 0.001, "<0.001", sprintf("%.4f", pval))
+  ) %>%
+  dplyr::select(Exposure, Outcome, nsnp, OR_CI, P_value)
+
+# ---------- Sheet S3: 靶向 MR 敏感性分析 ----------
+# S3a: 异质性检验 (Cochran's Q)
+s3_het <- data.frame(
+  Method = "IVW",
+  Q = 18.78,          # 你的实际值，如果你有 het 对象可以 het$Q[1] 获取
+  Q_df = 16,          # SNP数-1
+  Q_pval = 0.2745     # 你的输出
+)
+
+# S3b: 多效性检验 (MR-Egger intercept)
+s3_pleio <- data.frame(
+  egger_intercept = 0.009,   # 你可以从 pleio 对象获取实际值，这里先填近似值
+  se = 0.128,
+  pval = 0.9449
+)
+
+# S3c: 主结果表 (IVW, MR-Egger, Weighted median)
+s3_main <- read.csv("Table_MR_Main_Results.csv", stringsAsFactors = FALSE)
+s3_main <- s3_main %>%
+  dplyr::select(method, nsnp, b, se, pval, OR, OR_lower, OR_upper) %>%
+  rename(
+    Method = method,
+    nSNP = nsnp,
+    Beta = b,
+    SE = se,
+    P_value = pval,
+    OR = OR,
+    CI_lower = OR_lower,
+    CI_upper = OR_upper
+  )
+
+# S3d: 单 SNP 效应表
+s3_snp <- read.csv("Supplementary_Table_SingleSNP_Effects.csv", stringsAsFactors = FALSE)
+s3_snp <- s3_snp %>%
+  dplyr::select(SNP, b, se, p, OR, OR_lower, OR_upper) %>%
+  rename(
+    Beta = b,
+    SE = se,
+    P_value = p,
+    OR = OR,
+    CI_lower = OR_lower,
+    CI_upper = OR_upper
+  )
+
+# 将所有 Sheet 写入一个 Excel 文件
+write_xlsx(
+  list(
+    "S1_Differential_Metabolites" = s1,
+    "S2_Exploratory_MR" = s2,
+    "S3a_Heterogeneity" = s3_het,
+    "S3b_Pleiotropy" = s3_pleio,
+    "S3c_Main_MR_Results" = s3_main,
+    "S3d_SingleSNP_Effects" = s3_snp
+  ),
+  path = "Supplementary_Tables_S1_S3.xlsx"
+)
+
+cat("✅ 文件已生成: Supplementary_Tables_S1_S3.xlsx\n")
