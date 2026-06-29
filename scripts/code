@@ -672,10 +672,10 @@ mr_presso_result <- mr_presso(
 mr_presso_result$`Main MR results`
 
 # ==========================================
-# 生成投稿用补充材料 Excel (Supplementary Tables S1–S3)
+# 生成投稿用补充材料 Excel (Supplementary Tables)
 # ==========================================
 
-# 加载必要包（若未安装会自动安装）
+# 加载必要包
 if (!require("writexl")) install.packages("writexl")
 if (!require("dplyr")) install.packages("dplyr")
 library(writexl)
@@ -683,8 +683,26 @@ library(dplyr)
 
 # ---------- Sheet S1: 差异代谢物完整结果 ----------
 s1 <- read.csv("Differential_Metabolites_Results.csv", stringsAsFactors = FALSE)
-# 确保列顺序合理（可以根据需要调整）
 s1 <- s1 %>% dplyr::select(Metabolite, log2FC, Pvalue, FDR, change, everything())
+
+# ---------- Sheet S1b: 通路富集分析结果 ----------
+enrich <- read.csv("msea_ora_result.csv", stringsAsFactors = FALSE)
+enrich <- enrich %>% rename(Pathway = X)
+s1b <- enrich %>%
+  mutate(
+    Enrichment_Ratio = round(hits / expected, 2),
+    neg_log10_p = round(-log10(Raw.p), 2)
+  ) %>%
+  dplyr::select(Pathway, total, expected, hits, Enrichment_Ratio, Raw.p, FDR, neg_log10_p) %>%
+  rename(
+    Total_Compounds = total,
+    Expected_Hits = expected,
+    Observed_Hits = hits,
+    Raw_Pvalue = Raw.p,
+    FDR_Adjusted = FDR,
+    NegLog10_P = neg_log10_p
+  ) %>%
+  arrange(Raw_Pvalue)
 
 # ---------- Sheet S2: 探索性 MR 扫描 (IVW) ----------
 explor <- read.csv("Stage4_Exploratory_MR_All.csv", stringsAsFactors = FALSE)
@@ -697,23 +715,22 @@ s2 <- explor %>%
   ) %>%
   dplyr::select(Exposure, Outcome, nsnp, OR_CI, P_value)
 
-# ---------- Sheet S3: 靶向 MR 敏感性分析 ----------
-# S3a: 异质性检验 (Cochran's Q)
+# ---------- Sheet S3a: 异质性检验 (Cochran's Q) ----------
 s3_het <- data.frame(
   Method = "IVW",
-  Q = 18.78,          # 你的实际值，如果你有 het 对象可以 het$Q[1] 获取
-  Q_df = 16,          # SNP数-1
-  Q_pval = 0.2745     # 你的输出
+  Q = 18.78,
+  Q_df = 16,
+  Q_pval = 0.2745
 )
 
-# S3b: 多效性检验 (MR-Egger intercept)
+# ---------- Sheet S3b: 多效性检验 (MR-Egger intercept) ----------
 s3_pleio <- data.frame(
-  egger_intercept = 0.009,   # 你可以从 pleio 对象获取实际值，这里先填近似值
+  egger_intercept = 0.009,
   se = 0.128,
   pval = 0.9449
 )
 
-# S3c: 主结果表 (IVW, MR-Egger, Weighted median)
+# ---------- Sheet S3c: 主结果表 (IVW, MR-Egger, Weighted median) ----------
 s3_main <- read.csv("Table_MR_Main_Results.csv", stringsAsFactors = FALSE)
 s3_main <- s3_main %>%
   dplyr::select(method, nsnp, b, se, pval, OR, OR_lower, OR_upper) %>%
@@ -728,7 +745,7 @@ s3_main <- s3_main %>%
     CI_upper = OR_upper
   )
 
-# S3d: 单 SNP 效应表
+# ---------- Sheet S3d: 单 SNP 效应表 ----------
 s3_snp <- read.csv("Supplementary_Table_SingleSNP_Effects.csv", stringsAsFactors = FALSE)
 s3_snp <- s3_snp %>%
   dplyr::select(SNP, b, se, p, OR, OR_lower, OR_upper) %>%
@@ -741,17 +758,18 @@ s3_snp <- s3_snp %>%
     CI_upper = OR_upper
   )
 
-# 将所有 Sheet 写入一个 Excel 文件
+# ---------- 将所有 Sheet 写入一个 Excel 文件 ----------
 write_xlsx(
   list(
     "S1_Differential_Metabolites" = s1,
+    "S1b_Pathway_Enrichment" = s1b,
     "S2_Exploratory_MR" = s2,
     "S3a_Heterogeneity" = s3_het,
     "S3b_Pleiotropy" = s3_pleio,
     "S3c_Main_MR_Results" = s3_main,
     "S3d_SingleSNP_Effects" = s3_snp
   ),
-  path = "Supplementary_Tables_S1_S3.xlsx"
+  path = "Supplementary_Tables_S1_S4.xlsx"
 )
 
-cat("✅ 文件已生成: Supplementary_Tables_S1_S3.xlsx\n")
+cat("✅ 文件已生成: Supplementary_Tables_S1_S4.xlsx\n")
