@@ -264,49 +264,53 @@ print(sig_metabolites_clean)
 
 # 3. 真实富集分析：建议使用 MetaboAnalystR 或网页版
 # ===== 修改开始 =====
-# 方案1（推荐）：将代谢物清单导出，上传至 MetaboAnalyst (https://www.metaboanalyst.ca)
+# 将代谢物清单导出，上传至 MetaboAnalyst (https://www.metaboanalyst.ca)
 #               获取富集结果 CSV 后再回到 R 绘图。
-# 方案2（备选）：如果已配置好 MetaboAnalystR，可以取消注释下方代码直接运行。
-#
-# library(MetaboAnalystR)
-# # ... 详细调用代码 ...
-#
-# 以下代码演示如何从外部 CSV 载入真实富集结果并绘图。
-# 请确保在工作目录下有 "MetaboAnalyst_Enrichment_Results.csv"，包含列：Pathway, Hits, Pvalue
 
-enrich_file <- "MetaboAnalyst_Enrichment_Results.csv"
-if(file.exists(enrich_file)) {
-  enrich_result <- read.csv(enrich_file)
-  cat("✅ 已加载真实富集分析结果。\n")
-} else {
-  # 若没有真实文件，生成一个占位提示，并跳过绘图
-  cat("⚠️ 未找到 'MetaboAnalyst_Enrichment_Results.csv'，请先运行 MetaboAnalyst 获取结果。\n")
-  # 跳过后续绘图
-}
-# ===== 修改结束 =====
 
-# 4. 绘制富集气泡图（仅当数据可用时）
-if(exists("enrich_result")) {
-  cat("📊 [Step 4] 正在生成富集分析气泡图...\n")
-  
-  enrich_result <- enrich_result %>%
-    mutate(logP = -log10(Pvalue)) %>%
-    arrange(desc(logP))
-  
-  enrich_p <- ggplot(enrich_result, aes(x = Hits, y = reorder(Pathway, Hits))) +
-    geom_point(aes(size = Hits, color = Pvalue)) +
-    scale_color_gradient(low = "#E64B35FF", high = "#4DBBD5FF") +
-    theme_bw() +
-    labs(title = "Metabolic Pathway Enrichment (MSEA)",
-         x = "Number of Hits",
-         y = "Metabolic Pathway",
-         color = "P-value",
-         size = "Count") +
-    theme(axis.text = element_text(size = 10),
-          title = element_text(size = 12, face = "bold"))
-  
-  ggsave("Figure3_Pathway_Enrichment.pdf", enrich_p, width = 8, height = 6)
-}
+
+library(ggplot2)
+library(dplyr)
+
+# 1. 读取数据
+enrich <- read.csv("msea_ora_result.csv", stringsAsFactors = FALSE)
+enrich <- rename(enrich, Pathway = X)
+
+# 2. 数据预处理
+plot_df <- enrich %>%
+  mutate(
+    neg_log10_p = -log10(Raw.p),
+    Enrichment_Ratio = hits / expected
+  ) %>%
+  arrange(Raw.p)
+
+# 锁定 Y 轴因子顺序
+plot_df$Pathway <- factor(plot_df$Pathway, levels = rev(plot_df$Pathway))
+
+# 3. 绘制气泡图
+p <- ggplot(plot_df, aes(x = neg_log10_p, y = Pathway)) +
+  geom_point(aes(size = Enrichment_Ratio, color = Raw.p), alpha = 0.9) +
+  scale_color_gradient(low = "#E64B35", high = "#FFFDE6", name = "P-value") +
+  scale_size_continuous(range = c(3, 12), name = "Enrichment Ratio") +
+  theme_bw(base_size = 12) +
+  labs(
+    title = "KEGG Pathway Over-Representation Analysis",
+    subtitle = "12 of 13 altered metabolites mapped | Bubbles sized by Enrichment Ratio",
+    x = "-log10 (P-value)",
+    y = ""
+  ) +
+  theme(
+    axis.text.y = element_text(size = 11, color = "black"),
+    axis.text.x = element_text(size = 11, color = "black"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "grey40"),
+    panel.grid.minor = element_blank(),
+    legend.position = "right"
+  )
+
+# 4. 保存为 300 dpi PDF
+ggsave("Figure3_Pathway_Enrichment.pdf", p, width = 10, height = 7, dpi = 300)
+cat("✅ 气泡图已保存为 Figure3_Pathway_Enrichment.pdf（300 dpi）\n")
 
 # 5. 输出待查清单 (用于 MR 匹配)
 write.csv(data.frame(CleanName = sig_metabolites_clean, 
